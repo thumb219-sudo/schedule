@@ -1,21 +1,23 @@
+
 import streamlit as st
 import pandas as pd
+from io import StringIO
 
 # ------------------------------------------------------------
-# 수술실 간호사 근무표 기본 앱
+# 수술실 간호사 근무표 앱
 # ------------------------------------------------------------
-# 이 앱은 Streamlit으로 만든 간단한 웹 앱입니다.
-# 아직 완벽한 자동 배정 프로그램은 아니지만,
-# 간호사 정보를 입력하고, 근무표를 자동으로 기본 생성한 뒤,
-# 표 형태로 확인할 수 있도록 구성했습니다.
+# 이 앱은 수술실 간호사 32명의 정보를 입력하고,
+# Day / Admin / Evening / Off 근무표를 기본 생성하는 앱입니다.
 #
-# 실행 방법:
-# 1. 터미널에서 pip install -r requirements.txt 실행
-# 2. streamlit run app.py 실행
+# 이번 버전의 특징:
+# 1. 간호사 정보를 하나하나 입력하지 않고 붙여넣기 가능
+# 2. PART를 NS,GS,URO,OS처럼 여러 개 입력 가능
+# 3. SENIOR 가능여부 입력 가능
+# 4. 행정 간호사 3명 포함
 # ------------------------------------------------------------
 
 st.set_page_config(
-    page_title="수술실 간호사 근무표 앱",
+    page_title="수술실 근무 테이블 앱",
     page_icon="🏥",
     layout="wide",
 )
@@ -35,31 +37,95 @@ PARTS = ["NS", "OS", "GS", "URO"]
 
 
 # ------------------------------------------------------------
-# 앱 데이터 초기화
+# 기본 간호사 정보
 # ------------------------------------------------------------
-def init_session_state():
+DEFAULT_NURSE_DATA = """이름\tPART\tSENIOR 가능여부
+조희정\t행정(팀장)\t
+조성원\t행정(책임)\t
+최종선\t행정(책임)\t
+이우림\tNS,GS\t가능
+한현희\tNS,GS,URO,OS\t가능
+김서리\tNS,GS,URO\t가능
+황민경\tNS,OS,GS,URO\t가능
+김정은\tOS,URO,GS\t가능
+이유경\tOS,URO\t가능
+이다운\tOS,URO\t가능
+한정윤\tGS,NS,URO\t가능
+임정민\tNS,OS,GS,URO\t가능
+이연경\tOS,NS\t가능
+류혜리\tNS,OS,GS,URO\t가능
+정수연\tGS,NS,URO\t
+이지민\tNS,OS,GS,URO\t가능
+김유정\tOS,NS,URO,GS\t
+유혜원\tNS,GS\t
+김미정\tNS,GS,OS,URO\t
+한혜진\tNS,OS,GS,URO\t
+진솔\tOS,NS,GS\t
+김동호\tOS,URO,GS\t
+김정연\tNS,GS,URO\t
+이태림\tOS,NS,GS,URO\t
+김길영\tOS\t
+황랑경\tNS,GS,URO\t
+강은혜\tOS,GS,URO\t
+류원영\tNS\t
+변수민\tOS\t
+서은정\tNS\t
+김광진\tOS\t
+금민애\tOS\t
+"""
+
+
+# ------------------------------------------------------------
+# 붙여넣은 간호사 정보를 표로 바꾸는 함수
+# ------------------------------------------------------------
+def parse_nurse_text(text):
     """
-    Streamlit은 화면이 새로고침될 때마다 코드가 다시 실행됩니다.
-    그래서 입력한 정보를 유지하기 위해 session_state를 사용합니다.
+    엑셀이나 구글 스프레드시트에서 복사한 내용을
+    앱에서 사용할 수 있는 표 형태로 바꾸는 함수입니다.
+
+    예상 형식:
+    이름    PART    SENIOR 가능여부
+    조희정  행정(팀장)
+    이우림  NS,GS   가능
     """
 
-    if "nurse_df" not in st.session_state:
-        nurse_list = []
+    text = text.strip()
 
-        for i in range(1, TOTAL_NURSES + 1):
-            nurse_list.append(
-                {
-                    "번호": i,
-                    "이름": f"간호사{i}",
-                    "가능파트": PARTS[(i - 1) % len(PARTS)],
-                    "메모": "",
-                }
-            )
+    if not text:
+        return pd.DataFrame(columns=["번호", "이름", "PART", "SENIOR 가능여부", "메모"])
 
-        st.session_state.nurse_df = pd.DataFrame(nurse_list)
+    # 탭으로 구분된 표를 읽습니다.
+    # 구글 스프레드시트나 엑셀에서 복사하면 보통 탭으로 들어옵니다.
+    df = pd.read_csv(StringIO(text), sep="\t", header=None)
 
-    if "schedule_df" not in st.session_state:
-        st.session_state.schedule_df = pd.DataFrame()
+    # 첫 줄이 제목이면 제거합니다.
+    first_row = " ".join(df.iloc[0].astype(str).tolist())
+    if "이름" in first_row or "PART" in first_row:
+        df = df.iloc[1:].reset_index(drop=True)
+
+    rows = []
+
+    for i, row in df.iterrows():
+        values = [str(v).strip() for v in row.tolist()]
+
+        name = values[0] if len(values) > 0 and values[0] != "nan" else ""
+        part = values[1] if len(values) > 1 and values[1] != "nan" else ""
+        senior = values[2] if len(values) > 2 and values[2] != "nan" else ""
+
+        if name == "":
+            continue
+
+        rows.append(
+            {
+                "번호": len(rows) + 1,
+                "이름": name,
+                "PART": part,
+                "SENIOR 가능여부": senior,
+                "메모": "",
+            }
+        )
+
+    return pd.DataFrame(rows)
 
 
 # ------------------------------------------------------------
@@ -67,27 +133,43 @@ def init_session_state():
 # ------------------------------------------------------------
 def create_basic_schedule(nurse_df):
     """
-    간호사 정보를 기준으로 기본 근무표를 생성합니다.
+    기본 근무표를 생성합니다.
 
-    현재 배정 기준:
-    - Day 21명
-    - Admin 3명
-    - Evening 7명
-    - Off 1명
+    현재 기준:
+    - 행정 표시가 있는 사람은 Admin 우선 배정
+    - 나머지 중 앞에서부터 Day 21명
+    - 그다음 Evening 7명
+    - 마지막 Off 1명
 
-    현재는 간단한 순서 배정 방식입니다.
-    추후에는 Evening 주간 순환, 휴가 신청, 파트별 숙련도 조건 등을
-    추가할 수 있습니다.
+    추후에는 이브닝 주간 순환, 휴가자 지정, 파트별 인원 조건을 추가할 수 있습니다.
     """
+
+    df = nurse_df.copy().reset_index(drop=True)
 
     schedule_rows = []
 
-    for index, row in nurse_df.reset_index(drop=True).iterrows():
+    # 행정 간호사 먼저 분리
+    admin_df = df[df["PART"].str.contains("행정", na=False)].copy()
+    work_df = df[~df["PART"].str.contains("행정", na=False)].copy()
+
+    # 행정 간호사 배정
+    for _, row in admin_df.iterrows():
+        schedule_rows.append(
+            {
+                "번호": row["번호"],
+                "이름": row["이름"],
+                "근무": "Admin",
+                "PART": row["PART"],
+                "SENIOR 가능여부": row["SENIOR 가능여부"],
+                "메모": row["메모"],
+            }
+        )
+
+    # 일반 간호사 배정
+    for index, row in work_df.reset_index(drop=True).iterrows():
         if index < DAY_COUNT:
             shift = "Day"
-        elif index < DAY_COUNT + ADMIN_COUNT:
-            shift = "Admin"
-        elif index < DAY_COUNT + ADMIN_COUNT + EVENING_COUNT:
+        elif index < DAY_COUNT + EVENING_COUNT:
             shift = "Evening"
         else:
             shift = "Off"
@@ -97,21 +179,37 @@ def create_basic_schedule(nurse_df):
                 "번호": row["번호"],
                 "이름": row["이름"],
                 "근무": shift,
-                "파트": row["가능파트"],
+                "PART": row["PART"],
+                "SENIOR 가능여부": row["SENIOR 가능여부"],
                 "메모": row["메모"],
             }
         )
 
-    return pd.DataFrame(schedule_rows)
+    schedule_df = pd.DataFrame(schedule_rows)
+
+    return schedule_df
 
 
 # ------------------------------------------------------------
-# 앱 시작
+# 앱 데이터 초기화
 # ------------------------------------------------------------
+def init_session_state():
+    if "nurse_df" not in st.session_state:
+        st.session_state.nurse_df = parse_nurse_text(DEFAULT_NURSE_DATA)
+
+    if "schedule_df" not in st.session_state:
+        st.session_state.schedule_df = pd.DataFrame()
+
+
 init_session_state()
 
-st.title("🏥 수술실 간호사 근무표 앱")
+
+# ------------------------------------------------------------
+# 앱 제목
+# ------------------------------------------------------------
+st.title("🏥 수술실 근무 테이블 앱")
 st.caption("Day 21명 / Admin 3명 / Evening 7명 / Off 1명 기준")
+
 
 # ------------------------------------------------------------
 # 사이드바 메뉴
@@ -122,7 +220,7 @@ menu = st.sidebar.radio(
         "홈",
         "간호사 정보 입력",
         "파트별 가능 업무 관리",
-        "근무표 자동 생성",
+        "작업테이블 자동 생성",
         "근무표 확인",
     ],
 )
@@ -138,7 +236,7 @@ if menu == "홈":
 
     col1, col2, col3, col4 = st.columns(4)
 
-    col1.metric("전체 간호사", f"{TOTAL_NURSES}명")
+    col1.metric("전체 간호사", f"{len(st.session_state.nurse_df)}명")
     col2.metric("Day", f"{DAY_COUNT}명")
     col3.metric("Admin", f"{ADMIN_COUNT}명")
     col4.metric("Evening / Off", f"{EVENING_COUNT}명 / {OFF_COUNT}명")
@@ -146,10 +244,7 @@ if menu == "홈":
     st.subheader("수술 파트")
     st.write("NS, OS, GS, URO")
 
-    st.info(
-        "왼쪽 사이드바에서 간호사 정보를 입력하고, "
-        "근무표 자동 생성 메뉴에서 기본 근무표를 만들 수 있습니다."
-    )
+    st.info("왼쪽 메뉴에서 간호사 정보를 확인하고, 작업테이블 자동 생성 메뉴에서 근무표를 만들 수 있습니다.")
 
 
 # ------------------------------------------------------------
@@ -158,25 +253,38 @@ if menu == "홈":
 elif menu == "간호사 정보 입력":
     st.header("간호사 정보 입력")
 
-    st.write("간호사 이름, 가능 파트, 메모를 수정할 수 있습니다.")
+    tab1, tab2 = st.tabs(["현재 정보 확인/수정", "복사해서 한 번에 붙여넣기"])
 
-    edited_df = st.data_editor(
-        st.session_state.nurse_df,
-        num_rows="fixed",
-        use_container_width=True,
-        column_config={
-            "가능파트": st.column_config.SelectboxColumn(
-                "가능파트",
-                options=PARTS,
-                required=True,
-                help="간호사가 가능한 주요 수술 파트를 선택하세요.",
-            )
-        },
-    )
+    with tab1:
+        st.write("현재 저장된 간호사 정보입니다. 필요한 부분은 직접 수정할 수 있습니다.")
 
-    if st.button("간호사 정보 저장"):
-        st.session_state.nurse_df = edited_df
-        st.success("간호사 정보가 저장되었습니다.")
+        edited_df = st.data_editor(
+            st.session_state.nurse_df,
+            num_rows="dynamic",
+            use_container_width=True,
+        )
+
+        if st.button("수정한 간호사 정보 저장"):
+            st.session_state.nurse_df = edited_df
+            st.session_state.schedule_df = pd.DataFrame()
+            st.success("간호사 정보가 저장되었습니다.")
+
+    with tab2:
+        st.write("엑셀이나 구글 스프레드시트에서 표를 복사해서 아래 칸에 붙여넣으세요.")
+
+        pasted_text = st.text_area(
+            "간호사 정보 붙여넣기",
+            value=DEFAULT_NURSE_DATA,
+            height=400,
+        )
+
+        if st.button("붙여넣은 내용으로 저장"):
+            new_df = parse_nurse_text(pasted_text)
+            st.session_state.nurse_df = new_df
+            st.session_state.schedule_df = pd.DataFrame()
+
+            st.success(f"{len(new_df)}명의 간호사 정보가 저장되었습니다.")
+            st.dataframe(new_df, use_container_width=True)
 
 
 # ------------------------------------------------------------
@@ -185,42 +293,41 @@ elif menu == "간호사 정보 입력":
 elif menu == "파트별 가능 업무 관리":
     st.header("파트별 가능 업무 관리")
 
-    st.write("NS, OS, GS, URO 파트별 가능 인원을 확인합니다.")
+    st.write("한 명이 여러 파트를 할 수 있기 때문에, PART에 포함된 값을 기준으로 계산합니다.")
 
-    part_count = (
-        st.session_state.nurse_df["가능파트"]
-        .value_counts()
-        .reindex(PARTS, fill_value=0)
-        .reset_index()
-    )
+    part_summary = []
 
-    part_count.columns = ["파트", "가능 인원"]
+    for part in PARTS:
+        count = st.session_state.nurse_df["PART"].str.contains(part, na=False).sum()
+        part_summary.append({"파트": part, "가능 인원": count})
+
+    part_df = pd.DataFrame(part_summary)
 
     st.subheader("파트별 가능 인원")
-    st.dataframe(part_count, use_container_width=True)
+    st.dataframe(part_df, use_container_width=True)
 
     st.subheader("파트별 간호사 목록")
 
     selected_part = st.selectbox("확인할 파트 선택", PARTS)
 
     filtered_df = st.session_state.nurse_df[
-        st.session_state.nurse_df["가능파트"] == selected_part
+        st.session_state.nurse_df["PART"].str.contains(selected_part, na=False)
     ]
 
     st.dataframe(filtered_df, use_container_width=True)
 
 
 # ------------------------------------------------------------
-# 근무표 자동 생성
+# 작업테이블 자동 생성
 # ------------------------------------------------------------
-elif menu == "근무표 자동 생성":
-    st.header("근무표 자동 생성")
+elif menu == "작업테이블 자동 생성":
+    st.header("작업테이블 자동 생성")
 
     st.write("현재 입력된 간호사 정보를 바탕으로 기본 근무표를 생성합니다.")
 
     st.warning(
         "현재 자동 생성은 기본 순서 배정입니다. "
-        "추후 Evening 주간 순환, 휴가 신청, 파트별 숙련도 조건 등을 추가할 수 있습니다."
+        "추후 Evening 주간 순환, 휴가 신청, 파트별 필요 인원 조건을 추가할 수 있습니다."
     )
 
     if st.button("기본 근무표 생성"):
@@ -239,7 +346,7 @@ elif menu == "근무표 확인":
     st.header("근무표 확인")
 
     if st.session_state.schedule_df.empty:
-        st.info("아직 생성된 근무표가 없습니다. '근무표 자동 생성' 메뉴에서 먼저 생성하세요.")
+        st.info("'작업테이블 자동 생성' 메뉴에서 먼저 기본 근무표를 생성하세요.")
 
     else:
         st.subheader("전체 근무표")
